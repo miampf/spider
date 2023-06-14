@@ -10,6 +10,8 @@ pub struct Args {
     show_mail: bool,
     #[clap(short, long, help="Extend crawling to external URLs found.")]
     include_external_domains: bool,
+    #[clap(short, long, help="How much requests per second should be performed.")]
+    requests_per_second: u8,
     #[clap(short, long, help="Save all files found. This will create a new directory with the website name.")]
     save_files: bool,
     #[clap(short, long, help="A filename to which the valid URLs are written. This also saves email addresses if showing mail addresses is enabled.")]
@@ -40,7 +42,9 @@ impl Cli {
 (___/(__)  (____)(____/(____)(_)\_)          /   \
 Made with <3 by miampf (github.com/miampf)  |     |
 -----------------------------------------------------
- "#.red().bold()) 
+ "#.red().bold());
         }
+
+        
     }
 }
