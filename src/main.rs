@@ -1,8 +1,8 @@
 use clap::Parser;
 
-use spider::cli::Args;
+use spider::cli::Cli;
 
 fn main() {
-   let args = Args::parse();
-   println!("{:?}", args)
+    let cli = Cli::new();
+    cli.start()
 }

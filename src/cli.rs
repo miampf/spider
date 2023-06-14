@@ -15,3 +15,20 @@ pub struct Args {
     output: Option<String>,
     url: String
 }
+
+#[derive(Debug, Default)]
+pub struct Cli {
+    args: Args
+}
+
+impl Cli {
+    /// Create a new cli and parse the command line arguments.
+    pub fn new() -> Self {
+        Self { args: Args::parse() }
+    }
+
+    /// Start the cli and the main loop.
+    pub fn start(&self) {
+        
+    }
+}
