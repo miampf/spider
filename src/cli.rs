@@ -10,13 +10,11 @@ use linkify::{LinkFinder, LinkKind};
 #[derive(Parser, Debug, Default)]
 #[clap(about="A simple program to crawl a website for other URLs.")]
 pub struct Args {
-    #[clap(short, long, default_value_t=5, help="The recursion limit.")]
-    recursion: u8,
     #[clap(short='m', long, help="Show mail addresses found.")]
     show_mail: bool,
     #[clap(short, long, help="Extend crawling to external URLs found.")]
     include_external_domains: bool,
-    #[clap(short, long, help="How much requests per second should be performed.")]
+    #[clap(short, long, default_value_t=5, help="How much requests per second should be performed.")]
     requests_per_second: u64,
     #[clap(short, long, help="Save all files found. This will create a new directory with the website name.")]
     save_files: bool,
@@ -60,6 +58,7 @@ Made with <3 by miampf (github.com/miampf)  |     |
 
         // construct the rate limited client
         let ratelimiter = Ratelimiter::builder(self.args.requests_per_second, Duration::from_secs(1))
+            .max_tokens(self.args.requests_per_second)
             .build()?;
 
         /*
@@ -83,16 +82,13 @@ Made with <3 by miampf (github.com/miampf)  |     |
             std::thread::sleep(sleep);
         }
 
-        let ul = url_lock.clone();
-        let el = email_lock.clone();
+        let ul = Arc::clone(&url_lock);
+        let el = Arc::clone(&email_lock);
 
         let t = thread::spawn(move || {
             let to_scan = ul.read().unwrap();
-            let url = to_scan.get(to_scan.len()-1);
-            if url.is_none() {
-                return;
-            }
-            let body = client.get(url.unwrap().clone()).send().unwrap().text().unwrap();
+            let url = to_scan.last().unwrap();
+            let body = client.get(url.clone()).send().unwrap().text().unwrap();
 
             let mut finder = LinkFinder::new();
             finder.url_must_have_scheme(false);
@@ -110,7 +106,7 @@ Made with <3 by miampf (github.com/miampf)  |     |
         });
 
         t.join().unwrap();
-        println!("{:?}\n{:?}", to_scan, emails);
+        println!("{:?}\n{:?}", url_lock, email_lock);
 
         Ok(())
     }
