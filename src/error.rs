@@ -24,3 +24,9 @@ impl From<url::ParseError> for SpiderError {
         Self { msg: value.to_string() }
     }
 }
+
+impl From<reqwest::Error> for SpiderError {
+    fn from(value: reqwest::Error) -> Self {
+        Self { msg: value.to_string() }
+    }
+}

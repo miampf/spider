@@ -1,11 +1,11 @@
 use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use std::thread;
 
 use clap::Parser;
 use colored::*;
-use reqwest::{Url, Request, Method, Client};
 use ratelimit::Ratelimiter;
-
-use crate::error::SpiderError;
+use linkify::{LinkFinder, LinkKind};
 
 #[derive(Parser, Debug, Default)]
 #[clap(about="A simple program to crawl a website for other URLs.")]
@@ -30,7 +30,7 @@ pub struct Args {
 #[derive(Debug, Default)]
 pub struct Cli {
     args: Args,
-    client: Client,
+    link_finder: LinkFinder,
     discovered_pages: Vec<String>,
     discovered_emails: Vec<String>
 }
@@ -40,14 +40,12 @@ impl Cli {
     pub fn new() -> Self {
         Self { 
             args: Args::parse(), 
-            client: reqwest::Client::new(), 
-            discovered_pages: Vec::new(), 
-            discovered_emails: Vec::new() 
+            ..Default::default()
         }
     }
 
     /// Start the cli and the main loop.
-    pub fn start(&self) -> Result<(), crate::error::SpiderError>{
+    pub async fn start(&self) -> Result<(), crate::error::SpiderError>{
         if !self.args.no_banner {
             print!("{}", r#"
  ___  ____  ____  ____  ____  ____          |     |
@@ -56,25 +54,64 @@ impl Cli {
 (___/(__)  (____)(____/(____)(_)\_)          /   \
 Made with <3 by miampf (github.com/miampf)  |     |
 -----------------------------------------------------
- 
+
 "#.red().bold());
         }
 
         // construct the rate limited client
         let ratelimiter = Ratelimiter::builder(self.args.requests_per_second, Duration::from_secs(1))
-                                        .build()?;
+            .build()?;
 
-        // start to recursively spider the site
-        self.recursive_spider(0, &self.args.url, ratelimiter)?;
-    
+        /*
+         * Tried to do this recursively but failed miserably at implementing
+         * asynchronous recursion :(
+         */
+        self.spider(&ratelimiter).await?;    
         Ok(())
     }
 
-    fn recursive_spider(&self, count: u8, url: &String, rlimit_client: Ratelimiter) -> Result<(), crate::error::SpiderError> {
-        if count >= self.args.recursion {return Ok(()) }
+    pub async fn spider(&self, ratelimiter: &Ratelimiter) -> Result<(), crate::error::SpiderError>{
+        let to_scan = vec![self.args.url.clone()];
+        let url_lock = Arc::new(RwLock::new(to_scan));
 
-        let mut req = Request::new(Method::GET, Url::parse(url.as_str())?);
-    
+        let emails: Vec<String> = Vec::new();
+        let email_lock = Arc::new(RwLock::new(emails));
+
+        let client = reqwest::blocking::Client::new();
+
+        if let Err(sleep) = ratelimiter.try_wait() {
+            std::thread::sleep(sleep);
+        }
+
+        let ul = url_lock.clone();
+        let el = email_lock.clone();
+
+        let t = thread::spawn(move || {
+            let to_scan = ul.read().unwrap();
+            let url = to_scan.get(to_scan.len()-1);
+            if url.is_none() {
+                return;
+            }
+            let body = client.get(url.unwrap().clone()).send().unwrap().text().unwrap();
+
+            let mut finder = LinkFinder::new();
+            finder.url_must_have_scheme(false);
+
+            let links = finder.links(body.as_str());
+            let mut to_scan = ul.write().unwrap();
+            let mut emails = el.write().unwrap();
+            for link in links {
+                if link.kind() == &LinkKind::Url {
+                    to_scan.push(link.as_str().to_string());
+                } else if link.kind() == &LinkKind::Url {
+                    emails.push(link.as_str().to_string());
+                }
+            }
+        });
+
+        t.join().unwrap();
+        println!("{:?}\n{:?}", to_scan, emails);
+
         Ok(())
     }
 }

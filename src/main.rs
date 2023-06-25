@@ -2,7 +2,10 @@ use clap::Parser;
 
 use spider::cli::Cli;
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), crate::error::SpiderError> {
     let cli = Cli::new();
-    cli.start()
+    cli.start().await?
+
+    Ok(())
 }
