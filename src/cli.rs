@@ -6,7 +6,8 @@ use clap::Parser;
 use colored::*;
 use ratelimit::Ratelimiter;
 use linkify::{LinkFinder, LinkKind};
-use tracing::{info, warn, error, debug, Level};
+use tracing::{info, error, Level};
+use url::Url;
 
 #[derive(Parser, Debug, Default)]
 #[clap(about="A simple program to crawl a website for other URLs.")]
@@ -84,6 +85,8 @@ Made with <3 by miampf (github.com/miampf)  |     |
 
             let ul = Arc::clone(&url_lock);
             let el = Arc::clone(&email_lock);
+            let orig_url = self.args.url.clone();
+            let include_external = self.args.include_external_domains;
 
             // This is the thread that will actually make the requests
             threads.push(thread::spawn(move || {
@@ -146,7 +149,10 @@ Made with <3 by miampf (github.com/miampf)  |     |
                 for link in links {
                     if link.kind() == &LinkKind::Url {
                         info!("Found link: {}", link.as_str());
+                        
+                        if Url::parse(link.as_str()).unwrap().host_str() == Some(orig_url.as_str()) || include_external {
                         to_scan.push(link.as_str().to_string());
+                        }
                     } else if link.kind() == &LinkKind::Url {
                         info!("Found email: {}", link.as_str());
                         emails.push(link.as_str().to_string());
