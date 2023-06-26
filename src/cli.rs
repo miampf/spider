@@ -116,7 +116,7 @@ Made with <3 by miampf (github.com/miampf)  |     |
                 }
                 let body = body.unwrap();
 
-                let mut finder = LinkFinder::new();
+                let finder = LinkFinder::new();
                 
                 // release the read lock to prevent a deadlock
                 drop(to_scan);
