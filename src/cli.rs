@@ -76,36 +76,40 @@ Made with <3 by miampf (github.com/miampf)  |     |
         let emails: Vec<String> = Vec::new();
         let email_lock = Arc::new(RwLock::new(emails));
 
-        let client = reqwest::blocking::Client::new();
+        let mut threads = Vec::new();
+        loop {
+            if let Err(sleep) = ratelimiter.try_wait() {
+                std::thread::sleep(sleep);
+            }
 
-        if let Err(sleep) = ratelimiter.try_wait() {
-            std::thread::sleep(sleep);
+            let ul = Arc::clone(&url_lock);
+            let el = Arc::clone(&email_lock);
+
+            threads.push(thread::spawn(move || {
+                let to_scan = ul.read().unwrap();
+                let url = to_scan.last().unwrap();
+                let body = reqwest::blocking::get(url.clone()).unwrap().text().unwrap();
+
+                let mut finder = LinkFinder::new();
+                finder.url_must_have_scheme(false);
+
+                let links = finder.links(body.as_str());
+                let mut to_scan = ul.write().unwrap();
+                let mut emails = el.write().unwrap();
+                for link in links {
+                    if link.kind() == &LinkKind::Url {
+                        to_scan.push(link.as_str().to_string());
+                    } else if link.kind() == &LinkKind::Url {
+                        emails.push(link.as_str().to_string());
+                    }
+                }
+            }));
+        
+            if threads.is_empty() {
+                break;
+            }
         }
 
-        let ul = Arc::clone(&url_lock);
-        let el = Arc::clone(&email_lock);
-
-        let t = thread::spawn(move || {
-            let to_scan = ul.read().unwrap();
-            let url = to_scan.last().unwrap();
-            let body = client.get(url.clone()).send().unwrap().text().unwrap();
-
-            let mut finder = LinkFinder::new();
-            finder.url_must_have_scheme(false);
-
-            let links = finder.links(body.as_str());
-            let mut to_scan = ul.write().unwrap();
-            let mut emails = el.write().unwrap();
-            for link in links {
-                if link.kind() == &LinkKind::Url {
-                    to_scan.push(link.as_str().to_string());
-                } else if link.kind() == &LinkKind::Url {
-                    emails.push(link.as_str().to_string());
-                }
-            }
-        });
-
-        t.join().unwrap();
         println!("{:?}\n{:?}", url_lock, email_lock);
 
         Ok(())
