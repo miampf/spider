@@ -74,8 +74,11 @@ Made with <3 by miampf (github.com/miampf)  |     |
         let email_lock = Arc::new(RwLock::new(emails));
 
         let mut threads = Vec::new();
+        let mut thread_number = 0; // Works like an id for the thread. Useful for debugging and
+                                   // similair
         loop {
             if let Err(sleep) = ratelimiter.try_wait() {
+                thread_number = 0;
                 std::thread::sleep(sleep);
             }
 
@@ -84,7 +87,7 @@ Made with <3 by miampf (github.com/miampf)  |     |
 
             // This is the thread that will actually make the requests
             threads.push(thread::spawn(move || {
-                let _s = tracing::span!(Level::INFO, "http_request_thread").entered();
+                let _s = tracing::span!(Level::INFO, "http_request_thread", thread_number).entered();
 
                 // aquire a read lock for to_scan
                 let to_scan = ul.read();
@@ -157,6 +160,8 @@ Made with <3 by miampf (github.com/miampf)  |     |
             if threads.is_empty() {
                 break;
             }
+
+            thread_number += 1;
         }
 
         Ok(())
