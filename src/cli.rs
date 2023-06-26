@@ -157,7 +157,17 @@ Made with <3 by miampf (github.com/miampf)  |     |
                 to_scan.retain(|x| x != url);
             }));
 
-            if threads.is_empty() {
+            for i in 0..threads.len() {
+                let t = threads.get(i);
+                if t.is_none() {
+                    break;
+                }
+                if t.unwrap().is_finished() {
+                   threads.remove(i);
+               } 
+            }
+
+            if threads.is_empty() && url_lock.read().unwrap().is_empty(){
                 break;
             }
 
