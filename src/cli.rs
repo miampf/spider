@@ -6,6 +6,7 @@ use clap::Parser;
 use colored::*;
 use ratelimit::Ratelimiter;
 use linkify::{LinkFinder, LinkKind};
+use tracing::{info, warn, error, debug, Level};
 
 #[derive(Parser, Debug, Default)]
 #[clap(about="A simple program to crawl a website for other URLs.")]
@@ -28,9 +29,6 @@ pub struct Args {
 #[derive(Debug, Default)]
 pub struct Cli {
     args: Args,
-    link_finder: LinkFinder,
-    discovered_pages: Vec<String>,
-    discovered_emails: Vec<String>
 }
 
 impl Cli {
@@ -38,7 +36,6 @@ impl Cli {
     pub fn new() -> Self {
         Self { 
             args: Args::parse(), 
-            ..Default::default()
         }
     }
 
@@ -85,32 +82,82 @@ Made with <3 by miampf (github.com/miampf)  |     |
             let ul = Arc::clone(&url_lock);
             let el = Arc::clone(&email_lock);
 
+            // This is the thread that will actually make the requests
             threads.push(thread::spawn(move || {
-                let to_scan = ul.read().unwrap();
-                let url = to_scan.last().unwrap();
-                let body = reqwest::blocking::get(url.clone()).unwrap().text().unwrap();
+                let _s = tracing::span!(Level::INFO, "http_request_thread").entered();
+
+                // aquire a read lock for to_scan
+                let to_scan = ul.read();
+                if to_scan.is_err() {
+                    error!("Failed to get read lock for to_scan: {}", to_scan.unwrap_err());
+                    return;
+                }
+                let to_scan = to_scan.unwrap();
+                
+                let tc_clone = to_scan.clone();
+                let url = tc_clone.last();
+                if url.is_none() {
+                    error!("No URLs left to scan, exiting thread");
+                    return;
+                }
+                let url = url.unwrap();
+
+                let res = reqwest::blocking::get(url.clone());
+                if res.is_err() {
+                    error!("Request failed: {}", res.unwrap_err());
+                    return;
+                }
+                let res = res.unwrap();
+
+                let body = res.text();
+                if body.is_err() {
+                    error!("Failed to get body from response: {}", body.unwrap_err());
+                    return;
+                }
+                let body = body.unwrap();
 
                 let mut finder = LinkFinder::new();
-                finder.url_must_have_scheme(false);
+                
+                // release the read lock to prevent a deadlock
+                drop(to_scan);
 
                 let links = finder.links(body.as_str());
-                let mut to_scan = ul.write().unwrap();
-                let mut emails = el.write().unwrap();
+
+                // aquire a write lock for to_scan
+                let to_scan = ul.write();
+                if to_scan.is_err() {
+                    error!("Failed to get write lock for to_scan: {}", to_scan.unwrap_err());
+                    return;
+                }
+                let mut to_scan = to_scan.unwrap();
+
+                // aquire a write lock for emails
+                let emails = el.write();
+                if emails.is_err() {
+                    error!("Failed to get write lock for emails: {}", emails.unwrap_err());
+                    return;
+                }
+                let mut emails = emails.unwrap();
+
+                // extract the links and emails
                 for link in links {
                     if link.kind() == &LinkKind::Url {
+                        info!("Found link: {}", link.as_str());
                         to_scan.push(link.as_str().to_string());
                     } else if link.kind() == &LinkKind::Url {
+                        info!("Found email: {}", link.as_str());
                         emails.push(link.as_str().to_string());
                     }
                 }
+
+                // remove all elements from to_scan that were this url
+                to_scan.retain(|x| x != url);
             }));
-        
+
             if threads.is_empty() {
                 break;
             }
         }
-
-        println!("{:?}\n{:?}", url_lock, email_lock);
 
         Ok(())
     }
