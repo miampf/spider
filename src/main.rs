@@ -4,7 +4,12 @@ use spider::cli::Cli;
 
 #[tokio::main]
 async fn main() -> Result<(), spider::error::SpiderError> {
-    let subscriber = FmtSubscriber::builder().with_max_level(Level::INFO).finish();
+    let subscriber = FmtSubscriber::builder()
+        .without_time()
+        .with_target(false)
+        .with_max_level(Level::INFO)
+        .finish();
+
     tracing::subscriber::set_global_default(subscriber)
         .expect("failed to set up logging subscriber");
 
