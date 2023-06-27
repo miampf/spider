@@ -9,7 +9,7 @@ use linkify::{LinkFinder, LinkKind};
 use tracing::{info, error, Level};
 use url::Url;
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 #[clap(about="A simple program to crawl a website for other URLs.")]
 pub struct Args {
     #[clap(short='m', long, help="Show mail addresses found.")]
@@ -83,15 +83,17 @@ Made with <3 by miampf (github.com/miampf)  |     |
                 std::thread::sleep(sleep);
             }
 
+            // prepare data locks
             let ul = Arc::clone(&url_lock);
             let el = Arc::clone(&email_lock);
-            let orig_url = self.args.url.clone();
-            let include_external = self.args.include_external_domains;
+
+
+            let args = self.args.clone();
 
             // This is the thread that will actually make the requests
             if !url_lock.read().unwrap().is_empty(){
                 threads.push(thread::spawn(move || {
-                    spider_thread(thread_number, ul, el, orig_url, include_external);
+                    spider_thread(thread_number, ul, el, args);
                 }));
             }
 
@@ -117,7 +119,8 @@ Made with <3 by miampf (github.com/miampf)  |     |
 
 }
 
-fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwLock<Vec<String>>>, orig_url: String, include_external: bool) {
+// this function is executed as a thread in the CLI.
+fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwLock<Vec<String>>>, args: Args) {
     let _s = tracing::span!(Level::INFO, "http_request_thread", thread_number).entered();
 
     // aquire a read lock for to_scan
@@ -178,10 +181,11 @@ fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwL
         if link.kind() == &LinkKind::Url {
             info!("Found link: {}", link.as_str());
 
-            if Url::parse(link.as_str()).unwrap().host_str() == Some(orig_url.as_str()) || include_external {
+            if Url::parse(link.as_str()).unwrap().host_str() == Some(args.url.as_str()) || args.include_external_domains {
                 to_scan.push(link.as_str().to_string());
             }
-        } else if link.kind() == &LinkKind::Url {
+        } 
+        if link.kind() == &LinkKind::Email && args.show_mail {
             info!("Found email: {}", link.as_str());
             emails.push(link.as_str().to_string());
         }
