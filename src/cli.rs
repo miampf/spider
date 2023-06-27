@@ -89,79 +89,81 @@ Made with <3 by miampf (github.com/miampf)  |     |
             let include_external = self.args.include_external_domains;
 
             // This is the thread that will actually make the requests
-            threads.push(thread::spawn(move || {
-                let _s = tracing::span!(Level::INFO, "http_request_thread", thread_number).entered();
+            if !url_lock.read().unwrap().is_empty(){
+                threads.push(thread::spawn(move || {
+                    let _s = tracing::span!(Level::INFO, "http_request_thread", thread_number).entered();
 
-                // aquire a read lock for to_scan
-                let to_scan = ul.read();
-                if to_scan.is_err() {
-                    error!("Failed to get read lock for to_scan: {}", to_scan.unwrap_err());
-                    return;
-                }
-                let to_scan = to_scan.unwrap();
-                
-                let tc_clone = to_scan.clone();
-                let url = tc_clone.last();
-                if url.is_none() {
-                    error!("No URLs left to scan, exiting thread");
-                    return;
-                }
-                let url = url.unwrap();
-
-                let res = reqwest::blocking::get(url.clone());
-                if res.is_err() {
-                    error!("Request failed: {}", res.unwrap_err());
-                    return;
-                }
-                let res = res.unwrap();
-
-                let body = res.text();
-                if body.is_err() {
-                    error!("Failed to get body from response: {}", body.unwrap_err());
-                    return;
-                }
-                let body = body.unwrap();
-
-                let finder = LinkFinder::new();
-                
-                // release the read lock to prevent a deadlock
-                drop(to_scan);
-
-                let links = finder.links(body.as_str());
-
-                // aquire a write lock for to_scan
-                let to_scan = ul.write();
-                if to_scan.is_err() {
-                    error!("Failed to get write lock for to_scan: {}", to_scan.unwrap_err());
-                    return;
-                }
-                let mut to_scan = to_scan.unwrap();
-
-                // aquire a write lock for emails
-                let emails = el.write();
-                if emails.is_err() {
-                    error!("Failed to get write lock for emails: {}", emails.unwrap_err());
-                    return;
-                }
-                let mut emails = emails.unwrap();
-
-                // extract the links and emails
-                for link in links {
-                    if link.kind() == &LinkKind::Url {
-                        info!("Found link: {}", link.as_str());
-                        
-                        if Url::parse(link.as_str()).unwrap().host_str() == Some(orig_url.as_str()) || include_external {
-                        to_scan.push(link.as_str().to_string());
-                        }
-                    } else if link.kind() == &LinkKind::Url {
-                        info!("Found email: {}", link.as_str());
-                        emails.push(link.as_str().to_string());
+                    // aquire a read lock for to_scan
+                    let to_scan = ul.read();
+                    if to_scan.is_err() {
+                        error!("Failed to get read lock for to_scan: {}", to_scan.unwrap_err());
+                        return;
                     }
-                }
+                    let to_scan = to_scan.unwrap();
 
-                // remove all elements from to_scan that were this url
-                to_scan.retain(|x| x != url);
-            }));
+                    let tc_clone = to_scan.clone();
+                    let url = tc_clone.last();
+                    if url.is_none() {
+                        error!("No URLs left to scan, exiting thread");
+                        return;
+                    }
+                    let url = url.unwrap();
+
+                    let res = reqwest::blocking::get(url.clone());
+                    if res.is_err() {
+                        error!("Request failed: {}", res.unwrap_err());
+                        return;
+                    }
+                    let res = res.unwrap();
+
+                    let body = res.text();
+                    if body.is_err() {
+                        error!("Failed to get body from response: {}", body.unwrap_err());
+                        return;
+                    }
+                    let body = body.unwrap();
+
+                    let finder = LinkFinder::new();
+
+                    // release the read lock to prevent a deadlock
+                    drop(to_scan);
+
+                    let links = finder.links(body.as_str());
+
+                    // aquire a write lock for to_scan
+                    let to_scan = ul.write();
+                    if to_scan.is_err() {
+                        error!("Failed to get write lock for to_scan: {}", to_scan.unwrap_err());
+                        return;
+                    }
+                    let mut to_scan = to_scan.unwrap();
+
+                    // aquire a write lock for emails
+                    let emails = el.write();
+                    if emails.is_err() {
+                        error!("Failed to get write lock for emails: {}", emails.unwrap_err());
+                        return;
+                    }
+                    let mut emails = emails.unwrap();
+
+                    // extract the links and emails
+                    for link in links {
+                        if link.kind() == &LinkKind::Url {
+                            info!("Found link: {}", link.as_str());
+
+                            if Url::parse(link.as_str()).unwrap().host_str() == Some(orig_url.as_str()) || include_external {
+                                to_scan.push(link.as_str().to_string());
+                            }
+                        } else if link.kind() == &LinkKind::Url {
+                            info!("Found email: {}", link.as_str());
+                            emails.push(link.as_str().to_string());
+                        }
+                    }
+
+                    // remove all elements from to_scan that were this url
+                    to_scan.retain(|x| x != url);
+                }));
+            }
 
             for i in 0..threads.len() {
                 let t = threads.get(i);
