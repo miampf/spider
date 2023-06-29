@@ -84,8 +84,8 @@ Made with <3 by miampf (github.com/miampf)  |     |
             }
 
             // prepare data locks
-            let ul = Arc::clone(&url_lock);
-            let el = Arc::clone(&email_lock);
+            let url_thread_lock = Arc::clone(&url_lock);
+            let email_thread_lock = Arc::clone(&email_lock);
 
 
             let args = self.args.clone();
@@ -93,7 +93,7 @@ Made with <3 by miampf (github.com/miampf)  |     |
             // This is the thread that will actually make the requests
             if !url_lock.read().unwrap().is_empty(){
                 threads.push(thread::spawn(move || {
-                    spider_thread(thread_number, ul, el, args);
+                    spider_thread(thread_number, url_thread_lock, email_thread_lock, args);
                 }));
             }
 
@@ -120,11 +120,11 @@ Made with <3 by miampf (github.com/miampf)  |     |
 }
 
 // this function is executed as a thread in the CLI.
-fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwLock<Vec<String>>>, args: Args) {
+fn spider_thread(thread_number: usize, url_lock: Arc<RwLock<Vec<String>>>, email_lock: Arc<RwLock<Vec<String>>>, args: Args) {
     let _s = tracing::span!(Level::INFO, "http_request_thread", thread_number).entered();
 
     // aquire a read lock for to_scan
-    let to_scan = ul.read();
+    let to_scan = url_lock.read();
     if to_scan.is_err() {
         error!("Failed to get read lock for to_scan: {}", to_scan.unwrap_err());
         return;
@@ -161,7 +161,7 @@ fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwL
     let links = finder.links(body.as_str());
 
     // aquire a write lock for to_scan
-    let to_scan = ul.write();
+    let to_scan = url_lock.write();
     if to_scan.is_err() {
         error!("Failed to get write lock for to_scan: {}", to_scan.unwrap_err());
         return;
@@ -169,7 +169,7 @@ fn spider_thread(thread_number: usize, ul: Arc<RwLock<Vec<String>>>, el: Arc<RwL
     let mut to_scan = to_scan.unwrap();
 
     // aquire a write lock for emails
-    let emails = el.write();
+    let emails = email_lock.write();
     if emails.is_err() {
         error!("Failed to get write lock for emails: {}", emails.unwrap_err());
         return;
